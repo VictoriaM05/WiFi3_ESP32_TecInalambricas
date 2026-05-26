@@ -1,0 +1,116 @@
+const express = require('express');
+const sql = require('mssql');
+const cors = require('cors');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ============ CONFIGURACIÓN MSSQL ============
+const config = {
+  server: '192.168.1.9',     // IP de tu laptop
+  port: 1433,
+  user: 'sa',
+  password: 'C0NTR453N1!4',
+  database: 'test',
+  authentication: {
+    type: 'default',
+    options: {
+      userName: 'sa',
+      password: 'C0NTR453N1!4'
+    }
+  },
+  options: {
+    encrypt: false,
+    trustServerCertificate: true
+  }
+};
+
+// ============ RUTA: guardar puntaje del Snake ============
+app.post('/api/snake', async (req, res) => {
+  try {
+    const { nombre, puntaje } = req.body;
+
+    console.log(`\n🎮 Puntaje recibido de ESP32:`);
+    console.log(`   Jugador: ${nombre}`);
+    console.log(`   Puntaje: ${puntaje}`);
+
+    let pool = await sql.connect(config);
+
+    let result = await pool.request()
+      .input('nombre',  sql.VarChar(50), nombre  || 'Anonimo')
+      .input('puntaje', sql.Int,         puntaje || 0)
+      .query('INSERT INTO snake_scores (nombre, puntaje) VALUES (@nombre, @puntaje)');
+
+    await pool.close();
+
+    console.log('✓ Guardado en MSSQL');
+
+    res.json({
+      success: true,
+      message: 'Puntaje guardado correctamente',
+      rowsAffected: result.rowsAffected[0]
+    });
+
+  } catch (err) {
+    console.error('✗ Error:', err.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error al guardar puntaje',
+      error: err.message
+    });
+  }
+});
+
+// ============ RUTA: ver todos los puntajes ============
+app.get('/api/snake/scores', async (req, res) => {
+  try {
+    let pool = await sql.connect(config);
+    let result = await pool.request()
+      .query('SELECT TOP 10 nombre, puntaje, fecha FROM snake_scores ORDER BY puntaje DESC');
+    await pool.close();
+
+    res.json({ success: true, scores: result.recordset });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============ RUTA: prueba de conexión ============
+app.get('/api/test', async (req, res) => {
+  try {
+    let pool = await sql.connect(config);
+    await pool.close();
+    res.json({ success: true, message: 'Conexión a MSSQL exitosa' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Error de conexión', error: err.message });
+  }
+});
+
+// ============ RUTA: INSERT de prueba original ============
+app.post('/api/insert', async (req, res) => {
+  try {
+    const { nombre, valor, temperatura } = req.body;
+    let pool = await sql.connect(config);
+    let result = await pool.request()
+      .input('nombre',      sql.VarChar(50), nombre      || 'ESP32')
+      .input('valor',       sql.Int,         valor       || Math.floor(Math.random() * 100))
+      .input('temperatura', sql.Float,       temperatura || 25.5)
+      .query('INSERT INTO prueba (nombre, valor, temperatura) VALUES (@nombre, @valor, @temperatura)');
+    await pool.close();
+    res.json({ success: true, message: 'Datos insertados correctamente', rowsAffected: result.rowsAffected[0] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'Error al insertar datos', error: err.message });
+  }
+});
+
+// ============ INICIAR SERVIDOR ============
+const PORT = 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\nServidor API corriendo en http://0.0.0.0:${PORT}`);
+  console.log('Endpoints disponibles:');
+  console.log('  POST /api/snake        <- ESP32 manda puntaje aqui');
+  console.log('  GET  /api/snake/scores <- ver top 10 puntajes');
+  console.log('  GET  /api/test         <- prueba de conexion');
+  console.log('\nEsperando conexiones...');
+});
